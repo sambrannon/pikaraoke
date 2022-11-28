@@ -93,7 +93,7 @@ class VLCClient:
 
         self.volume_offset = 10
         self.process = None
-    
+
     def get_marquee_cmd(self):
         return ["--sub-source", 'logo{file=%s,position=9,x=2,opacity=200}:marq{marquee="Pikaraoke - connect at: \n%s",position=9,x=38,color=0xFFFFFF,size=11,opacity=200}' % (self.qrcode, self.url)]
 
@@ -103,7 +103,7 @@ class VLCClient:
             shutil.rmtree(extracted_dir)
         with zipfile.ZipFile(file_path, 'r') as zip_ref:
             zip_ref.extractall(extracted_dir)
-        
+
         mp3_file = None
         cdg_file = None
         files = os.listdir(extracted_dir)
@@ -113,13 +113,13 @@ class VLCClient:
                 mp3_file = file
             elif ext.casefold() == ".cdg":
                 cdg_file = file
-        
+
         if (mp3_file is not None) and (cdg_file is not None):
             if (os.path.splitext(mp3_file)[0] == os.path.splitext(cdg_file)[0] ):
                 return os.path.join(extracted_dir, mp3_file)
             else:
                 raise Exception("Zipped .mp3 file did not have a matching .cdg file: " + files)
-        else: 
+        else:
             raise Exception("No .mp3 or .cdg was found in the zip file: " + file_path)
 
     def handle_mp3_cdg(self, file_path):
@@ -144,7 +144,7 @@ class VLCClient:
             return file_path
 
     def play_file(self, file_path, additional_parameters=None):
-        try: 
+        try:
             file_path = self.process_file(file_path)
             if self.is_playing() or self.is_paused():
                 logging.debug("VLC is currently playing, stopping track...")
@@ -236,6 +236,7 @@ class VLCClient:
         return self.command("seek&val=0")
 
     def vol_up(self):
+        print(self.get_volume())
         return self.command("volume&val=%d" % (self.get_volume() + self.volume_offset))
 
     def vol_down(self):

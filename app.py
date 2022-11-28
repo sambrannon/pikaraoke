@@ -70,6 +70,183 @@ def get_locale():
     """Select the language to display the webpage in based on the Accept-Language header"""
     return request.accept_languages.best_match(LANGUAGES.keys())
 
+
+# (New) React API
+@app.route("/api/state")
+def api_state():
+    memory = psutil.virtual_memory()
+    disk = psutil.disk_usage("/")
+
+    try:
+        if len(k.queue) >= 1:
+            next_song = k.queue[0]["title"]
+            next_user = k.queue[0]["user"]
+        else:
+            next_song = None
+            next_user = None
+
+        state = {
+            # Site Info
+            "site_title": site_name,
+            "page_title": "Home",
+            "show_transpose": k.use_vlc,
+            "transpose_value": k.now_playing_transpose,
+            "admin": is_admin(),
+            # Now Playing
+            "now_playing": k.now_playing,
+            "now_playing_user": k.now_playing_user,
+            "up_next": next_song,
+            "next_user": next_user,
+            "is_paused": k.is_paused,
+            # Queue
+            "queue": k.queue or [],
+            # Info
+            "url": "http://" + request.host,
+            "cpu_usage": str(psutil.cpu_percent()) + "%",
+            "memory_available_mb": round(memory.available / 1024.0 / 1024.0, 1),
+            "memory_total_mb": round(memory.total / 1024.0 / 1024.0, 1),
+            "disk_free_gb": round(disk.free / 1024.0 / 1024.0 / 1024.0, 1),
+            "disk_total_gb": round(disk.total / 1024.0 / 1024.0 / 1024.0, 1),
+            "youtube_dl_version": k.youtubedl_version,
+            "pikaraoke_version": VERSION,
+            "is_pi": get_platform() == "raspberry_pi",
+            "platform": get_platform(),
+            "qrcode_path": "http://" + request.host + "/static/generated/qrcode.png", # TODO does this need to be generated?
+            "logo_path": "http://" + request.host + "/logo", # TODO does this need to be generated?
+        }
+
+        return json.dumps(state)
+    except (Exception) as e:
+        logging.error("Problem loading data, pikaraoke may still be starting up: " + str(e))
+        return ""
+
+
+@app.route("/api/addrandom", methods=["GET"])
+def add_random_api():
+    amount = int(request.args["amount"])
+    rc = k.queue_add_random(amount)
+    return json.dumps({ "hi": rc })
+
+
+@app.route("/api/queue/edit", methods=["GET"])
+def api_queue_edit():
+    action = request.args["action"]
+    if action == "clear":
+        k.queue_clear()
+        return json.dumps({ "message": "Cleared the queue!", "messageType": "is-warning" })
+    else:
+        song = request.args["song"]
+        song = unquote(song)
+        if action == "move_down":
+            result = k.queue_edit(song, "down")
+            print('move_down' + str(result))
+            if result:
+                return json.dumps({ "message": "Moved down in queue: " + song, "messageType": "is-success" })
+            else:
+                return json.dumps({ "message": "Error moving down in queue: " + song, "messageType": "is-danger" })
+        elif action == "move_up":
+            result = k.queue_edit(song, "up")
+            print('move_up' + str(result))
+            if result:
+                return json.dumps({ "message": "Moved up in queue: " + song, "messageType": "is-success" })
+            else:
+                return json.dumps({ "message": "Error moving up in queue: " + song, "messageType": "is-danger" })
+        elif action == "delete":
+            result = k.queue_edit(song, "delete")
+            print('delete' + str(result))
+            if result:
+                return json.dumps({ "message": "Deleted from queue: " + song, "messageType": "is-success" })
+            else:
+                return json.dumps({ "message": "Error deleting from queue: " + song, "messageType": "is-danger" })
+
+
+@app.route("/api/media-controls", methods=['GET'])
+def mediacontrols():
+    control = request.args['control']
+    if control == "play_or_pause":
+        k.pause()
+    elif control == "vol_up":
+        k.vol_up()
+    elif control == "vol_down":
+        k.vol_down()
+    elif control == "restart":
+        k.restart()
+    elif control == "skip":
+        k.skip()
+    else:
+        print("Media Control Command ({control}) doesn't exist")
+    return json.dumps({ "control": control })
+
+@app.route("/api/browse", methods=['GET'])
+def api_browse():
+    transformed_songs = []
+
+    for song in k.available_songs:
+        transformed_songs.append({
+            "fullPath": song,
+            "title": k.filename_from_path(song)
+        })
+
+    return json.dumps(transformed_songs)
+
+@app.route("/api/enqueue", methods=["POST", "GET"])
+def api_enqueue():
+    # request.args["song"]
+    # request.args["user"]
+
+    if "song" in request.args:
+        song = request.args["song"]
+    else:
+        d = request.form.to_dict()
+        song = d["song-to-add"]
+    if "user" in request.args:
+        user = request.args["user"]
+    else:
+        d = request.form.to_dict()
+        user = d["song-added-by"]
+    rc = k.enqueue(song, user)
+    song_title = filename_from_path(song)
+
+    return json.dumps({"song": song_title, "success": rc })
+
+@app.route("/api/rescan-song-directory")
+def api_refresh():
+    if (is_admin()):
+        k.get_available_songs()
+    else:
+        flash("You don't have permission to rescan", "is-danger")
+
+    return json.dumps({"success": "true" })
+
+@app.route("/api/update-youtube-dl")
+def api_update_ytdl():
+    if (is_admin()):
+        th = threading.Thread(target=update_youtube_dl)
+        th.start()
+        return json.dumps({"success": "true", "message": "Updating youtube-dl! Should take a minute or two... " })
+    else:
+        return json.dumps({"success": "false", "message": "You don't have permission to update youtube-dl" })
+
+@app.route("/api/search", methods=["GET"])
+def api_search():
+    if "query" in request.args:
+        search_string = request.args["query"]
+        if ("non_karaoke" in request.args and request.args["non_karaoke"] == "true"):
+            search_results = k.get_search_results(search_string)
+        else:
+            search_results = k.get_karaoke_search_results(search_string)
+    else:
+        search_string = None
+        search_results = None
+
+    return json.dumps({
+        "songs": k.available_songs,
+        "searchResults": search_results,
+        "searchString": search_string,
+    })
+
+
+# (Old) Flask Routes
 @app.route("/")
 def home():
     return render_template(
@@ -109,9 +286,10 @@ def logout():
     flash("Logged out of admin mode!", "is-success")
     return resp
 
+# Status: ✅
 @app.route("/nowplaying")
 def nowplaying():
-    try: 
+    try:
         if len(k.queue) >= 1:
             next_song = k.queue[0]["title"]
             next_user = k.queue[0]["user"]
@@ -132,12 +310,14 @@ def nowplaying():
         return ""
 
 
+# Status: ✅
 @app.route("/queue")
 def queue():
     return render_template(
         "queue.html", queue=k.queue, site_title=site_name, title="Queue", admin=is_admin()
     )
 
+# Status: ✅
 @app.route("/get_queue")
 def get_queue():
     if len(k.queue) >= 1:
@@ -145,6 +325,7 @@ def get_queue():
     else:
         return json.dumps([])
 
+# Status: ✅
 @app.route("/queue/addrandom", methods=["GET"])
 def add_random():
     amount = int(request.args["amount"])
@@ -156,6 +337,7 @@ def add_random():
     return redirect(url_for("queue"))
 
 
+# Status: ✅
 @app.route("/queue/edit", methods=["GET"])
 def queue_edit():
     action = request.args["action"]
@@ -209,12 +391,14 @@ def enqueue():
     return json.dumps({"song": song_title, "success": rc })
 
 
+# Status: ✅
 @app.route("/skip")
 def skip():
     k.skip()
     return redirect(url_for("home"))
 
 
+# Status: ✅
 @app.route("/pause")
 def pause():
     k.pause()
@@ -227,18 +411,21 @@ def transpose(semitones):
     return redirect(url_for("home"))
 
 
+# Status: ✅
 @app.route("/restart")
 def restart():
     k.restart()
     return redirect(url_for("home"))
 
 
+# Status: ✅
 @app.route("/vol_up")
 def vol_up():
     k.vol_up()
     return redirect(url_for("home"))
 
 
+# Status: ✅
 @app.route("/vol_down")
 def vol_down():
     k.vol_down()
@@ -289,7 +476,7 @@ def browse():
     available_songs = k.available_songs
 
     letter = request.args.get('letter')
-   
+
     if (letter):
         result = []
         if (letter == "numeric"):
@@ -297,7 +484,7 @@ def browse():
                 f = k.filename_from_path(song)[0]
                 if (f.isnumeric()):
                     result.append(song)
-        else: 
+        else:
             for song in available_songs:
                 f = k.filename_from_path(song).lower()
                 if (f.startswith(letter.lower())):
@@ -311,8 +498,8 @@ def browse():
     else:
         songs = available_songs
         sort_order = "Alphabetical"
-    
-    results_per_page = 500
+
+    results_per_page = 20
     pagination = Pagination(css_framework='bulma', page=page, total=len(songs), search=search, record_name='songs', per_page=results_per_page)
     start_index = (page - 1) * (results_per_page - 1)
     return render_template(
@@ -547,7 +734,7 @@ def quit():
 
 @app.route("/shutdown")
 def shutdown():
-    if (is_admin()): 
+    if (is_admin()):
         flash("Shutting down system now!", "is-danger")
         th = threading.Thread(target=delayed_halt, args=[1])
         th.start()
@@ -558,7 +745,7 @@ def shutdown():
 
 @app.route("/reboot")
 def reboot():
-    if (is_admin()): 
+    if (is_admin()):
         flash("Rebooting system now!", "is-danger")
         th = threading.Thread(target=delayed_halt, args=[2])
         th.start()
@@ -568,7 +755,7 @@ def reboot():
 
 @app.route("/expand_fs")
 def expand_fs():
-    if (is_admin() and platform == "raspberry_pi"): 
+    if (is_admin() and platform == "raspberry_pi"):
         flash("Expanding filesystem and rebooting system now!", "is-danger")
         th = threading.Thread(target=delayed_halt, args=[3])
         th.start()
@@ -595,12 +782,12 @@ def get_default_youtube_dl_path(platform):
     if platform == "osx":
         if os.path.isfile(default_ytdl_unix_path):
             return default_ytdl_unix_path
-        else: 
+        else:
             # just a guess based on the default python 3 install in OSX monterey
             return "/Library/Frameworks/Python.framework/Versions/3.10/bin/yt-dlp"
     else:
         return default_ytdl_unix_path
-        
+
 
 def get_default_dl_dir(platform):
     if platform == "raspberry_pi":

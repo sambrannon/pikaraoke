@@ -174,7 +174,7 @@ class Karaoke:
         if self.use_vlc:
             if (self.show_overlay):
                 self.vlcclient = vlcclient.VLCClient(port=self.vlc_port, path=self.vlc_path, qrcode=self.qr_code_path, url=self.url)
-            else: 
+            else:
                 self.vlcclient = vlcclient.VLCClient(port=self.vlc_port, path=self.vlc_path)
         else:
             self.omxclient = omxclient.OMXClient(path=self.omxplayer_path, adev=self.omxplayer_adev, dual_screen=self.dual_screen, volume_offset=self.volume_offset)
@@ -183,7 +183,7 @@ class Karaoke:
             self.initialize_screen()
             self.render_splash_screen()
 
- 
+
     # Other ip-getting methods are unreliable and sometimes return 127.0.0.1
     # https://stackoverflow.com/a/28950776
     def get_ip(self):
@@ -201,17 +201,17 @@ class Karaoke:
     def get_raspi_wifi_conf_vals(self):
         """Extract values from the RaspiWiFi configuration file."""
         f = open(self.raspi_wifi_conf_file, "r")
-        
+
         # Define default values.
         #
-        # References: 
+        # References:
         # - https://github.com/jasbur/RaspiWiFi/blob/master/initial_setup.py (see defaults in input prompts)
         # - https://github.com/jasbur/RaspiWiFi/blob/master/libs/reset_device/static_files/raspiwifi.conf
         #
         server_port = "80"
         ssid_prefix = "RaspiWiFi Setup"
         ssl_enabled = "0"
-        
+
         # Override the default values according to the configuration file.
         for line in f.readlines():
             if "server_port=" in line:
@@ -264,7 +264,9 @@ class Karaoke:
         qr.make()
         img = qr.make_image()
         self.qr_code_path = os.path.join(self.base_path, "qrcode.png")
+        self.qr_code_path2 = os.path.join(self.base_path, "static/generated/qrcode.png")
         img.save(self.qr_code_path)
+        img.save(self.qr_code_path2)
 
     def get_default_display_mode(self):
         if self.use_vlc:
@@ -380,8 +382,8 @@ class Karaoke:
                 )
                 text3 = self.font.render(
                     "Then point its browser to: '%s://%s%s' and follow the instructions."
-                    % ("https" if ssl_enabled == "1" else "http", 
-                       self.raspi_wifi_config_ip, 
+                    % ("https" if ssl_enabled == "1" else "http",
+                       self.raspi_wifi_config_ip,
                        ":%s" % server_port if server_port != "80" else ""),
                     True,
                     (255, 255, 255),
@@ -491,7 +493,7 @@ class Karaoke:
         cdg_file = song_path.replace(ext[1],".cdg")
         if (os.path.exists(cdg_file)):
             os.remove(cdg_file)
-        
+
         self.get_available_songs()
 
     def rename(self, song_path, new_name):
@@ -583,7 +585,7 @@ class Karaoke:
 
     def enqueue(self, song_path, user="Pikaraoke"):
         if (self.is_song_in_queue(song_path)):
-            logging.warn("Song is already in queue, will not add: " + song_path)   
+            logging.warn("Song is already in queue, will not add: " + song_path)
             return False
         else:
             logging.info("'%s' is adding song to queue: %s" % (user, song_path))
@@ -691,6 +693,7 @@ class Karaoke:
         if self.is_file_playing():
             if self.use_vlc:
                 self.vlcclient.vol_up()
+                print(self.vlcclient.get_volume())
             else:
                 self.omxclient.vol_up()
             return True

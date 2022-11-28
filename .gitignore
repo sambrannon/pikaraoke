@@ -4,4 +4,6 @@
 __pycache__/
 songs/
 qrcode.png
+static/generated/*
+!static/generated/.gitkeep
 .DS_Store
